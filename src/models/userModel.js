@@ -2,10 +2,11 @@
 // Defines the User schema and model for MongoDB
 
 import mongoose from 'mongoose';
+import bcrypt from 'bcrypt';
 
 const userSchema = new mongoose.Schema(
   {
-    name: {
+    display_name: {
       type: String,
       required: true,
       trim: true,
@@ -15,14 +16,68 @@ const userSchema = new mongoose.Schema(
       required: true,
       unique: true,
       lowercase: true,
+      trim: true,
     },
-    createdAt: {
-      type: Date,
-      default: Date.now,
+    password: {
+      type: String,
+      required: true,
+      select: false,
+    },
+    stage: {
+      type: String,
+      default: 'seeker',
+      trim: true,
+    },
+    interests: [
+      {
+        type: String,
+        trim: true,
+      },
+    ],
+    depth_level: {
+      type: String,
+      enum: ['surface', 'intermediate', 'deep'],
+      default: 'surface',
+    },
+    discussion_style: {
+      type: String,
+      enum: ['debate', 'explore', 'learn'],
+      default: 'explore',
+    },
+    availability: [
+      {
+        type: String,
+        trim: true,
+      },
+    ],
+    group_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Group',
+      default: null,
     },
   },
-  { collection: 'users' }
+  {
+    collection: 'users',
+    timestamps: { createdAt: 'created_at', updatedAt: false },
+  }
 );
+
+userSchema.pre('save', async function (next) {
+  if (!this.isModified('password')) return next();
+
+  // If the password already looks like a bcrypt hash, don't hash again.
+  // This keeps compatibility with controllers that hash before saving.
+  if (typeof this.password === 'string' && this.password.startsWith('$2')) {
+    return next();
+  }
+
+  try {
+    this.password = await bcrypt.hash(this.password, 10);
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
 
 const User = mongoose.model('User', userSchema);
 
