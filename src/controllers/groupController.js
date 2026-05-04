@@ -1,297 +1,126 @@
-import User from '../models/userModel.js';
+import mongoose from 'mongoose';
 import Group from '../models/groupModel.js';
+import User from '../models/userModel.js';
 
-// Helper: Create default groups for testing
+const getUserIdFromReq = (req) => {
+  if (!req?.user) return null;
+  if (typeof req.user === 'string') return req.user;
+  if (typeof req.user === 'object' && req.user.id) return req.user.id;
+  return null;
+};
+
+// Helper: Create default groups for testing (only if DB is empty)
 export const createDefaultGroups = async () => {
   try {
     const count = await Group.countDocuments();
-    if (count > 0) return; // Already has groups
+    if (count > 0) return;
 
     const defaultTopics = ['AI', 'Cyber', 'Startups', 'Blockchain', 'Cloud'];
-    for (const topic of defaultTopics) {
-      await Group.create({
+    await Group.insertMany(
+      defaultTopics.map((topic) => ({
         topic,
         members: [],
         capacity: 5,
         is_active: true,
-      });
-    }
+      }))
+    );
+
     console.log('Default groups created');
   } catch (error) {
-    console.error('Error creating default groups:', error.message);
+    console.error('Error creating default groups:', error?.message || error);
   }
 };
 
-const calculateScore = (userA, userB) => {
-  let score = 0;
-
-  // 1. Interests match: +2 for first, +1 for each additional
-  if (userA.interests && userB.interests) {
-    const userAInterests = userA.interests || [];
-    const userBInterests = userB.interests || [];
-    const matches = userAInterests.filter((interest) =>
-      userBInterests.includes(interest)
-    );
-    if (matches.length > 0) {
-      score += 2 + (matches.length - 1);
-    }
-  }
-
-  // 2. Depth level: Same = +2, Close (intermediate/deep) = +1
-  if (userA.depth_level && userB.depth_level) {
-    if (userA.depth_level === userB.depth_level) {
-      score += 2;
-    } else if (
-      ['intermediate', 'deep'].includes(userA.depth_level) &&
-      ['intermediate', 'deep'].includes(userB.depth_level)
-    ) {
-      score += 1;
-    }
-  }
-
-  // 3. Discussion style: Same = +1
-  if (userA.discussion_style && userB.discussion_style) {
-    if (userA.discussion_style === userB.discussion_style) {
-      score += 1;
-    }
-  }
-
-  // 4. Availability: At least one overlap = +1
-  if (userA.availability && userB.availability) {
-    const userAAvail = userA.availability || [];
-    const userBAvail = userB.availability || [];
-    const overlap = userAAvail.some((slot) => userBAvail.includes(slot));
-    if (overlap) {
-      score += 1;
-    }
-  }
-
-  return score;
-};
-
-export const getSuggestions = async (req, res) => {
+export const getSuggestedGroups = async (req, res) => {
   try {
-    const userId = req.user;
-    const user = await User.findById(userId);
+    const userId = getUserIdFromReq(req);
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
 
+    const user = await User.findById(userId).lean();
     if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found',
-      });
+      return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    const userInterests = user.interests || [];
-
-    if (userInterests.length === 0) {
-      return res.json({
-        success: true,
-        data: [],
-        message: 'Add interests to get group suggestions',
-      });
+    const interests = Array.isArray(user.interests) ? user.interests : [];
+    if (interests.length === 0) {
+      return res.json({ success: true, data: [] });
     }
 
-    // Find groups with matching topics
-    const suggestedGroups = await Group.find({
-      topic: { $in: userInterests },
+    const groups = await Group.find({
+      topic: { $in: interests },
       is_active: true,
-    }).populate('members', 'display_name email');
+    })
+      .select({ topic: 1, members: 1, capacity: 1 })
+      .lean();
 
-    res.json({
+    groups.sort((a, b) => (a.members?.length || 0) - (b.members?.length || 0));
+
+    return res.json({
       success: true,
-      data: suggestedGroups,
+      data: groups.map((g) => ({
+        id: String(g._id),
+        topic: g.topic,
+        members_count: Array.isArray(g.members) ? g.members.length : 0,
+        capacity: g.capacity,
+      })),
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: 'Error fetching suggestions',
-      error: error.message,
+      message: 'Error fetching suggested groups',
+      error: error?.message || String(error),
     });
   }
 };
 
 export const joinGroup = async (req, res) => {
   try {
-    const userId = req.user;
+    const userId = getUserIdFromReq(req);
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
     const { groupId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(groupId)) {
+      return res.status(400).json({ success: false, message: 'Invalid groupId' });
+    }
 
     const group = await Group.findById(groupId);
-
     if (!group) {
-      return res.status(404).json({
-        success: false,
-        message: 'Group not found',
-      });
+      return res.status(404).json({ success: false, message: 'Group not found' });
     }
 
     if (!group.is_active) {
-      return res.status(400).json({
-        success: false,
-        message: 'Group is inactive',
-      });
+      return res.status(400).json({ success: false, message: 'Group is inactive' });
     }
 
-    // Check capacity
-    if (group.members.length >= group.capacity) {
-      return res.status(400).json({
-        success: false,
-        message: 'Group is full',
-      });
+    const members = Array.isArray(group.members) ? group.members : [];
+    const isAlreadyMember = members.some((m) => String(m) === String(userId));
+    if (isAlreadyMember) {
+      return res
+        .status(400)
+        .json({ success: false, message: 'User already in group' });
     }
 
-    // Check if already member
-    const isMember = group.members.some(
-      (memberId) => memberId.toString() === userId
-    );
-
-    if (isMember) {
-      return res.json({
-        success: true,
-        message: 'Already a member of this group',
-        data: group,
-      });
+    if (members.length >= group.capacity) {
+      return res.status(400).json({ success: false, message: 'Group is full' });
     }
 
-    // Add user to group
     group.members.push(userId);
     await group.save();
 
-    const updatedGroup = await Group.findById(groupId).populate(
-      'members',
-      'display_name email'
-    );
-
-    res.json({
+    return res.json({
       success: true,
       message: 'Joined group successfully',
-      data: updatedGroup,
+      data: group,
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Error joining group',
-      error: error.message,
-    });
-  }
-};
-
-export const getMyGroup = async (req, res) => {
-  try {
-    const userId = req.user;
-    const user = await User.findById(userId);
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found',
-      });
-    }
-
-    if (!user.group_id) {
-      return res.json({
-        success: true,
-        group: null,
-        message: 'User is not in any group',
-      });
-    }
-
-    const group = await Group.findById(user.group_id).populate('members');
-
-    res.json({
-      success: true,
-      group,
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching group',
-      error: error.message,
-    });
-  }
-};
-
-export const createGroups = async (req, res) => {
-  try {
-    // Fetch only ungrouped users with interests
-    const allUsers = await User.find({
-      interests: { $exists: true, $ne: [] },
-      group_id: null,
-    });
-
-    if (allUsers.length < 3) {
-      return res.json({
-        success: true,
-        groups: [],
-        message: 'Not enough ungrouped users with interests to form groups',
-      });
-    }
-
-    const groups = [];
-    const grouped = new Set();
-
-    // For each ungrouped user, find best matches and form a group
-    for (let i = 0; i < allUsers.length; i++) {
-      const userA = allUsers[i];
-      const userAId = String(userA._id);
-
-      // Skip if already in a group
-      if (grouped.has(userAId)) {
-        continue;
-      }
-
-      // Calculate scores with all other ungrouped users
-      const candidates = [];
-
-      for (let j = 0; j < allUsers.length; j++) {
-        if (i === j) continue;
-        const userB = allUsers[j];
-        const userBId = String(userB._id);
-        if (grouped.has(userBId)) continue;
-
-        const score = calculateScore(userA, userB);
-        candidates.push({ user: userB, score });
-      }
-
-      // Sort by score descending
-      candidates.sort((a, b) => b.score - a.score);
-
-      // Pick top 2-3 candidates to form group of 3-4
-      const groupMembers = [userA];
-      const topCandidates = candidates.slice(0, 3); // Pick top 3
-
-      for (const candidate of topCandidates) {
-        groupMembers.push(candidate.user);
-        grouped.add(String(candidate.user._id));
-      }
-
-      grouped.add(userAId);
-
-      // Create Group document
-      const memberIds = groupMembers.map((u) => u._id);
-      const groupDoc = await Group.create({
-        members: memberIds,
-        is_active: true,
-      });
-
-      // Assign group_id to each user and save
-      for (const user of groupMembers) {
-        user.group_id = groupDoc._id;
-        await user.save();
-      }
-
-      groups.push(groupDoc);
-    }
-
-    res.json({
-      success: true,
-      groups,
-      message: `Created ${groups.length} groups`,
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Error creating groups',
-      error: error.message,
+      error: error?.message || String(error),
     });
   }
 };

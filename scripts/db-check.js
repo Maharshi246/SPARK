@@ -4,6 +4,32 @@ import mongoose from 'mongoose';
 
 dotenv.config();
 
+const buildSeedUriFromSrvUri = (srvUri, seedlist, replicaSet) => {
+  const parsed = new URL(srvUri);
+
+  const username = parsed.username ? encodeURIComponent(parsed.username) : '';
+  const password = parsed.password ? encodeURIComponent(parsed.password) : '';
+  const authPrefix = username
+    ? `${username}${password ? `:${password}` : ''}@`
+    : '';
+
+  const database = parsed.pathname?.replace(/^\//, '') || '';
+  const seedHosts = seedlist
+    .split(',')
+    .map((h) => h.trim())
+    .filter(Boolean)
+    .map((h) => (h.includes(':') ? h : `${h}:27017`))
+    .join(',');
+
+  const params = new URLSearchParams(parsed.search);
+  if (replicaSet && !params.has('replicaSet')) params.set('replicaSet', replicaSet);
+  if (!params.has('authSource')) params.set('authSource', 'admin');
+  if (!params.has('tls') && !params.has('ssl')) params.set('tls', 'true');
+
+  const query = params.toString();
+  return `mongodb://${authPrefix}${seedHosts}/${database}${query ? `?${query}` : ''}`;
+};
+
 const redactMongoUri = (uri = '') => {
   try {
     const parsed = new URL(uri);
@@ -39,10 +65,31 @@ const main = async () => {
   }
 
   try {
-    await mongoose.connect(uri, {
-      serverSelectionTimeoutMS: 8000,
-    });
+    try {
+      await mongoose.connect(uri, {
+        serverSelectionTimeoutMS: 8000,
+      });
+    } catch (err) {
+      const seedlist = process.env.MONGO_SEEDLIST;
+      const replicaSet = process.env.MONGO_REPLICA_SET;
+      const isSrvDnsError =
+        uri.startsWith('mongodb+srv://') &&
+        (err?.code === 'ECONNREFUSED' || String(err?.message || '').includes('querySrv'));
+
+      if (isSrvDnsError && seedlist) {
+        const fallbackUri = buildSeedUriFromSrvUri(uri, seedlist, replicaSet);
+        await mongoose.connect(fallbackUri, {
+          serverSelectionTimeoutMS: 8000,
+        });
+        console.log('MongoDB: CONNECTED (seedlist fallback)');
+      } else {
+        throw err;
+      }
+    }
+
     console.log('MongoDB: CONNECTED');
+    const pingResult = await mongoose.connection.db.admin().ping();
+    console.log('MongoDB: PING OK', pingResult);
     await mongoose.disconnect();
     console.log('MongoDB: DISCONNECTED');
     process.exit(0);

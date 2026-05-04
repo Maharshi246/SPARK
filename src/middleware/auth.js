@@ -2,24 +2,30 @@ import jwt from 'jsonwebtoken';
 import { authMiddleware } from './authMiddleware.js';
 
 export const protect = (req, res, next) => {
+  console.log('AUTH HEADER:', req.headers.authorization);
+
   const header = req.headers.authorization;
-  if (!header || !header.startsWith('Bearer ')) {
-    return res.status(401).json({ success: false, message: 'Unauthorized' });
+  if (!header) {
+    return res.status(401).json({ success: false, message: 'No token provided' });
   }
 
-  const token = header.split(' ')[1];
+  const [scheme, token] = header.split(' ');
+  if (scheme !== 'Bearer' || !token) {
+    return res.status(401).json({ success: false, message: 'Invalid token' });
+  }
+
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const userId = decoded.userId || decoded.id;
     if (!userId) {
-      return res.status(401).json({ success: false, message: 'Unauthorized' });
+      return res.status(401).json({ success: false, message: 'Invalid token' });
     }
 
-    // Spec: attach userId to req.user
-    req.user = userId;
+    // Attach user to req.user
+    req.user = { id: userId, userId };
     return next();
   } catch (error) {
-    return res.status(401).json({ success: false, message: 'Unauthorized' });
+    return res.status(401).json({ success: false, message: 'Invalid token' });
   }
 };
 

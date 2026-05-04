@@ -28,12 +28,15 @@ const userSchema = new mongoose.Schema(
       default: 'seeker',
       trim: true,
     },
-    interests: [
-      {
-        type: String,
-        trim: true,
-      },
-    ],
+    interests: {
+      type: [
+        {
+          type: String,
+          trim: true,
+        },
+      ],
+      default: [],
+    },
     depth_level: {
       type: String,
       enum: ['surface', 'intermediate', 'deep'],
@@ -54,6 +57,27 @@ const userSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Group',
       default: null,
+    },
+    joinedCommunities: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Community',
+      },
+    ],
+    circle_memberships: {
+      type: [
+        {
+          community: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Community',
+          },
+          circle: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Circle',
+          },
+        },
+      ],
+      default: [],
     },
   },
   {

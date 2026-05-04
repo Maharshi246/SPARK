@@ -54,6 +54,12 @@ export const register = async (req, res) => {
 
 export const login = async (req, res) => {
   try {
+    console.log('LOGIN HEADERS:', {
+      'content-type': req.headers['content-type'],
+      'content-length': req.headers['content-length'],
+    });
+    console.log('BODY:', req.body);
+
     const { email, password } = req.body;
 
     if (!email || !password) {

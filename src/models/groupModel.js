@@ -8,6 +8,7 @@ const groupSchema = new mongoose.Schema(
     topic: {
       type: String,
       required: true,
+      trim: true,
     },
     members: [
       {
