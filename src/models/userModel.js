@@ -50,11 +50,18 @@ const userSchema = new mongoose.Schema(
         trim: true,
       },
     ],
-    group_id: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Group',
-      default: null,
-    },
+    memberships: [
+      {
+        community_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Community', required: true },
+        circle_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Circle', required: true },
+        joined_at: { type: Date, default: Date.now }
+      }
+    ],
+    current_stage: {
+      type: String,
+      enum: ['stage_1', 'stage_2', 'stage_3', 'stage_4', 'stage_5'],
+      default: 'stage_1'
+    }
   },
   {
     collection: 'users',

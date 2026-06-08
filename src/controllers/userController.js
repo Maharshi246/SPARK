@@ -98,3 +98,16 @@ export const updateMe = async (req, res) => {
 // Backward-compatible aliases (older /profile routes)
 export const getProfile = getMe;
 export const updateProfile = updateMe;
+
+import { calculateProgress } from '../services/progressionService.js';
+
+// Protected: GET /api/users/progress
+export const getUserProgress = async (req, res) => {
+  try {
+    const userId = getUserIdFromReq(req);
+    const progress = await calculateProgress(userId);
+    res.json({ success: true, data: progress });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to calculate progress' });
+  }
+};
