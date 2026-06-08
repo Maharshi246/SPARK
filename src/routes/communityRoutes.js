@@ -1,20 +1,24 @@
 import { Router } from 'express';
 import {
-	getAllCommunities,
-	getSuggestedCommunities,
-	joinCommunity,
+  getCommunities,
+  getMyCommunities,
+  joinCommunity,
+  leaveCommunity,
 } from '../controllers/communityController.js';
 import { protect } from '../middleware/auth.js';
 
 const router = Router();
 
-// GET /api/communities/all - Get all communities (public)
-router.get('/all', getAllCommunities);
+// GET /api/communities - List all available system-managed communities
+router.get('/', protect, getCommunities);
 
-// GET /api/communities/suggestions - Get communities matching user interests
-router.get('/suggestions', protect, getSuggestedCommunities);
+// GET /api/communities/my-communities - List communities the user has joined
+router.get('/my-communities', protect, getMyCommunities);
 
-// POST /api/communities/join/:communityId - Join a community
-router.post('/join/:communityId', protect, joinCommunity);
+// POST /api/communities/:id/join - Join a community (auto-assigns circle)
+router.post('/:id/join', protect, joinCommunity);
+
+// POST /api/communities/:id/leave - Leave a community (auto-leaves circle)
+router.post('/:id/leave', protect, leaveCommunity);
 
 export default router;

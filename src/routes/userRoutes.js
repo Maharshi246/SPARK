@@ -9,7 +9,7 @@ import {
   getProfile,
   getMe,
   updateMe,
-  saveUserInterests,
+  getUserProgress
 } from '../controllers/userController.js';
 import { protect } from '../middleware/auth.js';
 
@@ -24,9 +24,7 @@ router.post('/', createUser);
 // Protected profile routes (recommended)
 router.get('/me', protect, getMe);
 router.put('/me', protect, updateMe);
-
-// Protected: save interests
-router.post('/interests', protect, saveUserInterests);
+router.get('/progress', protect, getUserProgress);
 
 // Backward-compatible curiosity profile routes
 router.put('/profile', protect, updateProfile);

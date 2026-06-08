@@ -2,33 +2,33 @@ import mongoose from 'mongoose';
 
 const circleSchema = new mongoose.Schema(
   {
-    community: {
+    community_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Community',
       required: true,
+      index: true,
     },
-    members: {
-      type: [
-        {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: 'User',
-        },
-      ],
-      default: [],
-    },
-    members_count: {
-      type: Number,
-      default: 0,
-    },
-    max_size: {
+    members: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+      },
+    ],
+    capacity: {
       type: Number,
       default: 8,
+    },
+    is_active: {
+      type: Boolean,
+      default: true,
     },
   },
   {
     collection: 'circles',
-    timestamps: { createdAt: 'created_at', updatedAt: false },
+    timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },
   }
 );
 
-export default mongoose.model('Circle', circleSchema);
+const Circle = mongoose.model('Circle', circleSchema);
+
+export default Circle;

@@ -99,29 +99,15 @@ export const updateMe = async (req, res) => {
 export const getProfile = getMe;
 export const updateProfile = updateMe;
 
-// Protected: POST /api/users/interests
-export const saveUserInterests = async (req, res) => {
+import { calculateProgress } from '../services/progressionService.js';
+
+// Protected: GET /api/users/progress
+export const getUserProgress = async (req, res) => {
   try {
-    const userId = req?.user?.id;
-    const { interests } = req.body;
-
-    if (!interests || !Array.isArray(interests)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Interests must be an array',
-      });
-    }
-
-    const user = await User.findByIdAndUpdate(userId, { interests }, { new: true });
-
-    return res.json({
-      success: true,
-      data: user,
-    });
-  } catch (err) {
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to save interests',
-    });
+    const userId = getUserIdFromReq(req);
+    const progress = await calculateProgress(userId);
+    res.json({ success: true, data: progress });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to calculate progress' });
   }
 };
