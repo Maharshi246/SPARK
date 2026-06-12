@@ -6,8 +6,9 @@ import mongoose from 'mongoose';
 import { socketAuth } from '../middleware/socketAuth.js';
 import { registerSocket, unregisterSocket } from './activeSockets.js';
 import User from '../models/userModel.js';
+import Circle from '../models/circleModel.js';
 import Message from '../models/messageModel.js';
-import { logEvent } from '../services/engagementService.js';
+import { logEngagementEvent } from '../services/engagementLogService.js';
 
 const roomNameForCircle = (circleId) => `circle_${circleId}`;
 
@@ -35,8 +36,8 @@ export const initSocket = (httpServer) => {
     const userId = socket.data.userId;
     registerSocket(userId, socket.id);
 
-    // Fire-and-forget logging
-    logEvent({ user_id: userId, event_type: 'session_start' });
+    // Fire-and-forget session_start logging
+    logEngagementEvent({ userId, eventType: 'session_start' }).catch(() => {});
 
     // Cache sender display_name on socket (best-effort)
     try {
@@ -52,6 +53,16 @@ export const initSocket = (httpServer) => {
         const circleObjectId = toObjectId(circleId);
         if (!circleObjectId) {
           if (typeof ack === 'function') ack({ success: false, message: 'Invalid circleId' });
+          return;
+        }
+
+        // Verify circle membership before joining room
+        const circle = await Circle.findOne({
+          _id: circleObjectId,
+          members: toObjectId(userId)
+        });
+        if (!circle) {
+          if (typeof ack === 'function') ack({ success: false, message: 'Not a member of this circle' });
           return;
         }
 
@@ -137,8 +148,8 @@ export const initSocket = (httpServer) => {
         io.to(room).emit('send_message', eventPayload);
         if (typeof ack === 'function') ack({ success: true, data: eventPayload });
 
-        // Fire-and-forget logging
-        logEvent({ user_id: userId, circle_id: circleObjectId, event_type: 'message_sent', metadata: { messageLength: text.trim().length } });
+        // Fire-and-forget logging (no content logged to engagement system)
+        logEngagementEvent({ userId, eventType: 'message_sent', circleId: String(circleObjectId) }).catch(() => {});
       } catch {
         if (typeof ack === 'function') ack({ success: false, message: 'Failed to send message' });
       }
@@ -148,7 +159,7 @@ export const initSocket = (httpServer) => {
       unregisterSocket(socket.id);
 
       // Fire-and-forget logging
-      logEvent({ user_id: userId, event_type: 'session_end' });
+      logEngagementEvent({ userId, eventType: 'session_end' }).catch(() => {});
     });
   });
 

@@ -12,17 +12,17 @@ const getUserIdFromReq = (req) => {
 };
 
 // Public: list users (safe fields only)
-export const getUsers = async (req, res) => {
+export const getUsers = async (req, res, next) => {
   try {
     const users = await User.find({}, safeUserSelect);
     res.json({ success: true, data: users });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Failed to fetch users' });
+    next(error);
   }
 };
 
 // Backward-compatible: create user via /api/users (kept so existing code doesn't break)
-export const createUser = async (req, res) => {
+export const createUser = async (req, res, next) => {
   try {
     const { display_name, email, password, stage } = req.body;
 
@@ -51,12 +51,12 @@ export const createUser = async (req, res) => {
       },
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Failed to create user' });
+    next(error);
   }
 };
 
 // Protected: GET /api/users/me
-export const getMe = async (req, res) => {
+export const getMe = async (req, res, next) => {
   try {
     const userId = getUserIdFromReq(req);
     const user = await User.findById(userId).select(safeUserSelect);
@@ -65,12 +65,12 @@ export const getMe = async (req, res) => {
     }
     res.json({ success: true, data: user });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Failed to fetch profile' });
+    next(error);
   }
 };
 
 // Protected: PUT /api/users/me
-export const updateMe = async (req, res) => {
+export const updateMe = async (req, res, next) => {
   try {
     const userId = getUserIdFromReq(req);
     const allowed = ['interests', 'depth_level', 'discussion_style', 'availability'];
@@ -91,7 +91,7 @@ export const updateMe = async (req, res) => {
 
     res.json({ success: true, data: user });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Failed to update profile' });
+    next(error);
   }
 };
 
@@ -102,12 +102,12 @@ export const updateProfile = updateMe;
 import { calculateProgress } from '../services/progressionService.js';
 
 // Protected: GET /api/users/progress
-export const getUserProgress = async (req, res) => {
+export const getUserProgress = async (req, res, next) => {
   try {
     const userId = getUserIdFromReq(req);
     const progress = await calculateProgress(userId);
     res.json({ success: true, data: progress });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Failed to calculate progress' });
+    next(error);
   }
 };

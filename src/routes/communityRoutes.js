@@ -4,6 +4,7 @@ import {
   getMyCommunities,
   joinCommunity,
   leaveCommunity,
+  getCommunityById,
 } from '../controllers/communityController.js';
 import { protect } from '../middleware/auth.js';
 
@@ -14,6 +15,9 @@ router.get('/', protect, getCommunities);
 
 // GET /api/communities/my-communities - List communities the user has joined
 router.get('/my-communities', protect, getMyCommunities);
+
+// GET /api/communities/:id - View a single community
+router.get('/:id', protect, getCommunityById);
 
 // POST /api/communities/:id/join - Join a community (auto-assigns circle)
 router.post('/:id/join', protect, joinCommunity);

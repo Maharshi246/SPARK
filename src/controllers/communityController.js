@@ -2,6 +2,8 @@ import mongoose from 'mongoose';
 import Community from '../models/communityModel.js';
 import Circle from '../models/circleModel.js';
 import User from '../models/userModel.js';
+import { findBestCircleForUser } from '../services/circleMatchingService.js';
+import { logEngagementEvent, buildEventPayload } from '../services/engagementLogService.js';
 
 const getUserIdFromReq = (req) => {
   if (req?.user?.id) return req.user.id;
@@ -11,10 +13,42 @@ const getUserIdFromReq = (req) => {
 // GET /api/communities
 export const getCommunities = async (req, res) => {
   try {
-    const communities = await Community.find({ is_active: true }).sort({ name: 1 });
+    const user = req.user;
+    const filter = { is_active: true };
+    
+    if (user.role !== 'admin') {
+      filter.university_id = user.university_id;
+    }
+
+    const communities = await Community.find(filter).sort({ name: 1 });
     res.json({ success: true, data: communities });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to fetch communities' });
+  }
+};
+
+// GET /api/communities/:id
+export const getCommunityById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const user = req.user;
+    const community = await Community.findById(id).lean();
+    if (!community) {
+      return res.status(404).json({ success: false, message: 'Community not found' });
+    }
+
+    if (user.role !== 'admin' && String(community.university_id) !== String(user.university_id)) {
+      return res.status(403).json({ success: false, message: 'Access denied: Community belongs to a different university' });
+    }
+    // Log the view event (fire-and-forget, non-blocking)
+    const eventPayload = buildEventPayload(req, 'community_viewed', { communityId: id });
+    if (eventPayload) {
+      logEngagementEvent(eventPayload).catch(() => {});
+    }
+    res.json({ success: true, data: community });
+  } catch (error) {
+    console.error('Error fetching community:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
   }
 };
 
@@ -53,6 +87,13 @@ export const joinCommunity = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Community not found or inactive' });
     }
 
+    const reqUser = req.user;
+    if (reqUser.role !== 'admin' && String(community.university_id) !== String(reqUser.university_id)) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(403).json({ success: false, message: 'Access denied: Community belongs to a different university' });
+    }
+
     // 2. Verify user and check if already joined
     const user = await User.findById(userId).session(session);
     if (!user) {
@@ -70,14 +111,8 @@ export const joinCommunity = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Already a member of this community' });
     }
 
-    // 3. Find active Circle with capacity < 8 using aggregation-like approach
-    // Mongoose doesn't natively support querying array length directly without $expr or $size if variable capacity
-    // But since default is 8, we can do $expr
-    let circle = await Circle.findOne({
-      community_id: communityId,
-      is_active: true,
-      $expr: { $lt: [{ $size: "$members" }, "$capacity"] }
-    }).session(session);
+    // 3. Find the most compatible Circle with capacity < 8
+    let circle = await findBestCircleForUser(user, communityId, session);
 
     // 4. If none exists, create new Circle
     if (!circle) {
@@ -85,6 +120,7 @@ export const joinCommunity = async (req, res) => {
         [
           {
             community_id: communityId,
+            university_id: community.university_id,
             members: [userId],
             is_active: true,
             capacity: 8,
@@ -110,6 +146,15 @@ export const joinCommunity = async (req, res) => {
     await session.commitTransaction();
     session.endSession();
 
+    // Log circle_joined event (fire-and-forget, after transaction success)
+    const eventPayload = buildEventPayload(req, 'circle_joined', {
+      communityId: communityId,
+      circleId: String(circle._id)
+    });
+    if (eventPayload) {
+      logEngagementEvent(eventPayload).catch(() => {});
+    }
+
     res.json({
       success: true,
       message: 'Successfully joined community and assigned to circle',
@@ -121,8 +166,7 @@ export const joinCommunity = async (req, res) => {
   } catch (error) {
     await session.abortTransaction();
     session.endSession();
-    // If running without replica set, transactions might fail. Fallback to non-transactional could be required depending on environment.
-    res.status(500).json({ success: false, message: 'Failed to join community', error: error.message });
+    res.status(500).json({ success: false, message: 'Failed to join community' });
   }
 };
 
@@ -172,6 +216,6 @@ export const leaveCommunity = async (req, res) => {
   } catch (error) {
     await session.abortTransaction();
     session.endSession();
-    res.status(500).json({ success: false, message: 'Failed to leave community', error: error.message });
+    res.status(500).json({ success: false, message: 'Failed to leave community' });
   }
 };

@@ -1,0 +1,83 @@
+# Email Verification Implementation
+
+This plan outlines the steps to implement email verification across the SPARK Student Network. To prevent fake accounts, users must verify their email before they can access the platform.
+
+## User Review Required
+> [!IMPORTANT]
+> The backend `package.json` does not currently list `nodemailer`. I will run `npm install nodemailer` as part of this plan. 
+
+> [!NOTE]
+> Since we do not have a production SMTP server set up yet, I will use `nodemailer` with [Ethereal Email](https://ethereal.email/) for development, which captures outgoing emails and logs a preview URL to the console. You can specify production SMTP credentials in `.env` later.
+
+## Proposed Changes
+
+### Backend Dependencies
+- **[NEW]** `npm install nodemailer`
+
+---
+
+### Backend Data Models
+
+#### [MODIFY] [userModel.js](file:///c:/Users/MAHARSHI/Downloads/SPARK/src/models/userModel.js)
+- Add `is_email_verified` (Boolean, default `false`)
+- Add `email_verification_token` (String, unique, sparse)
+- Add `email_verification_expires` (Date)
+
+---
+
+### Backend Utilities
+
+#### [NEW] `src/utils/emailService.js`
+- Create `sendVerificationEmail(userEmail, verificationToken, userName)` using Nodemailer.
+- Configure transport via `SMTP_HOST`, `SMTP_PORT`, etc., falling back to a dynamically generated Ethereal account if env vars are missing.
+
+---
+
+### Backend Controllers & Routes
+
+#### [MODIFY] [authController.js](file:///c:/Users/MAHARSHI/Downloads/SPARK/src/controllers/authController.js)
+- **`register`**: Generate a 32-byte hex token, set expiration to 24h. Call `sendVerificationEmail`. Remove automatic login (do not return JWT).
+- **`login`**: Check if `is_email_verified` is true. If not, return `403 Forbidden` with a message.
+- **[NEW] `verifyEmail`**: Look up the token, mark `is_email_verified = true`, and clear the token fields.
+- **[NEW] `resendVerification`**: Generate a new token and trigger `sendVerificationEmail` for an unverified user.
+
+#### [MODIFY] [authRoutes.js](file:///c:/Users/MAHARSHI/Downloads/SPARK/src/routes/authRoutes.js)
+- `GET /verify-email` -> `verifyEmail`
+- `POST /resend-verification` -> `resendVerification`
+
+---
+
+### Frontend Services & Context
+
+#### [MODIFY] [authService.ts](file:///c:/Users/MAHARSHI/Downloads/SPARK/frontend/src/services/authService.ts)
+- Add `verifyEmail(token: string)` and `resendVerification(email: string)` API calls.
+
+#### [MODIFY] [AuthContext.tsx](file:///c:/Users/MAHARSHI/Downloads/SPARK/frontend/src/context/AuthContext.tsx)
+- Update the `register` function. Since registration no longer logs the user in, it will only return `{ success: true, message: '...' }` so the UI can redirect the user.
+
+---
+
+### Frontend Pages & Components
+
+#### [NEW] `frontend/src/app/verify-email/page.tsx`
+- A public route that handles two states:
+  1. **Pending Verification**: Tells the user to check their inbox. Provides a "Resend Email" button.
+  2. **Token Processing**: If a `?token=` query parameter is present, it automatically calls the verify API and redirects to `/login` upon success.
+
+#### [MODIFY] [AuthPage.tsx](file:///c:/Users/MAHARSHI/Downloads/SPARK/frontend/src/components/auth/AuthPage.tsx)
+- On successful registration, redirect to `/verify-email?email=[user_email]`.
+- On login failure due to unverified email (403), show a link to `/verify-email?email=[user_email]`.
+
+---
+
+## Verification Plan
+
+### Automated Verification
+- No automated tests currently exist, but I will verify build integrity (`npm run build`).
+
+### Manual Verification
+- Start the server.
+- Register a new user and observe the Ethereal email preview URL logged in the backend terminal.
+- Attempt to log in with the unverified user (should be blocked with a 403).
+- Open the verify link in the browser, triggering the verification process.
+- Log in successfully after verification.

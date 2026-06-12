@@ -57,10 +57,52 @@ const userSchema = new mongoose.Schema(
         joined_at: { type: Date, default: Date.now }
       }
     ],
-    current_stage: {
+    current_layer: {
       type: String,
-      enum: ['stage_1', 'stage_2', 'stage_3', 'stage_4', 'stage_5'],
-      default: 'stage_1'
+      enum: ['layer_1', 'layer_2', 'layer_3'],
+      default: 'layer_1'
+    },
+    layer_history: [
+      {
+        layer: String,
+        changed_at: { type: Date, default: Date.now }
+      }
+    ],
+    role: {
+      type: String,
+      enum: ['student', 'manager', 'admin'],
+      default: 'student'
+    },
+    university_id: { 
+      type: mongoose.Schema.Types.ObjectId, 
+      ref: 'University', 
+      default: null,
+      index: true
+    },
+    enrollment_token: { 
+      type: String, 
+      sparse: true, 
+      unique: true 
+    },
+    is_email_verified: {
+      type: Boolean,
+      default: false
+    },
+    email_verification_token: {
+      type: String,
+      unique: true,
+      sparse: true
+    },
+    email_verification_expires: {
+      type: Date
+    },
+    password_reset_token: {
+      type: String,
+      unique: true,
+      sparse: true
+    },
+    password_reset_expires: {
+      type: Date
     }
   },
   {

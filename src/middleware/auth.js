@@ -1,33 +1,32 @@
 import jwt from 'jsonwebtoken';
-import { authMiddleware } from './authMiddleware.js';
+import User from '../models/userModel.js';
 
-export const protect = (req, res, next) => {
-  console.log('AUTH HEADER:', req.headers.authorization);
-
+export const protect = async (req, res, next) => {
   const header = req.headers.authorization;
-  if (!header) {
-    return res.status(401).json({ success: false, message: 'No token provided' });
+  if (!header || !header.startsWith('Bearer')) {
+    return res.status(401).json({ success: false, message: 'Not authorized, no token' });
   }
 
-  const [scheme, token] = header.split(' ');
-  if (scheme !== 'Bearer' || !token) {
-    return res.status(401).json({ success: false, message: 'Invalid token' });
+  const token = header.split(' ')[1];
+  if (!token) {
+    return res.status(401).json({ success: false, message: 'Not authorized, no token' });
   }
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const userId = decoded.userId || decoded.id;
     if (!userId) {
-      return res.status(401).json({ success: false, message: 'Invalid token' });
+      return res.status(401).json({ success: false, message: 'Not authorized, invalid token payload' });
     }
 
-    // Attach user to req.user
-    req.user = { id: userId, userId };
-    return next();
+    const user = await User.findById(userId).select('-password');
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'User not found' });
+    }
+
+    req.user = user;
+    next();
   } catch (error) {
-    return res.status(401).json({ success: false, message: 'Invalid token' });
+    return res.status(401).json({ success: false, message: 'Not authorized, token failed' });
   }
 };
-
-// Backward-compatible exports
-export const auth = authMiddleware;
